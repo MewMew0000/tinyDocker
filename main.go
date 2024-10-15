@@ -16,13 +16,13 @@ func main() {
 	switch os.Args[1] {
 	case "run":
 		fmt.Println("run pid", os.Getpid(), "ppid", os.Getppid())
-		initCmd, err := os.Readlink("/proc/self/exe")
+		initCmd, err := os.Readlink("/proc/self/exe") // get/reflect its own path (tinydocker here)
 		if err != nil {
 			fmt.Println("get init process error", err)
 			return
 		}
 		os.Args[1] = "init"
-		cmd := exec.Command(initCmd, os.Args[1:]...)
+		cmd := exec.Command(initCmd, os.Args[1:]...) // run itself with init
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS | syscall.CLONE_NEWNET | syscall.CLONE_NEWIPC,
 		}
@@ -35,13 +35,13 @@ func main() {
 			log.Fatal(err)
 		}
 	case "init":
-		syscall.Chroot("./ubuntu2204_rootfs")
+		syscall.Chroot("./ubuntu2204_rootfs") // limit process to a vitrual root file system
 		syscall.Chdir("/")
 		defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
 		syscall.Mount("proc", "proc", "proc", uintptr(defaultMountFlags), "")
 		cmd := os.Args[2]
 		fmt.Println("exec cmd=", cmd)
-		err := syscall.Exec(cmd, os.Args[2:], os.Environ())
+		err := syscall.Exec(cmd, os.Args[2:], os.Environ()) // replace current process with the new one
 		if err != nil {
 			fmt.Println("exec proc fail", err)
 			return
