@@ -2,60 +2,80 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"syscall"
-	"tinyDocker/workspace"
+	"time"
+	"tinydocker/cgroups"
+	"tinydocker/config"
+	"tinydocker/log"
+	"tinydocker/network"
+	"tinydocker/workspace"
 )
 
 func main() {
 	switch os.Args[1] {
-	//parent process
 	case "run":
-		initCmd, err := os.Readlink("/proc/self/exe") // get/reflect its own path (tinydocker here)
-		if err != nil {
-			fmt.Println("get init process error", err)
+		if err := network.Init(); err != nil {
+			log.Error("net work fail err=%s", err)
 			return
 		}
-		containerName := os.Args[2]
+		fmt.Println(config.Banner())
+		initCmd, err := os.Readlink("/proc/self/exe")
+		if err != nil {
+			log.Error("get init process error %s", err)
+			return
+		}
 		os.Args[1] = "init"
-		cmd := exec.Command(initCmd, os.Args[1:]...) // run itself with init
+		cmd := exec.Command(initCmd, os.Args[1:]...)
 		cmd.SysProcAttr = &syscall.SysProcAttr{
-			Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS | syscall.CLONE_NEWNET | syscall.CLONE_NEWIPC,
+			Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS |
+				syscall.CLONE_NEWNET | syscall.CLONE_NEWIPC,
 		}
 		cmd.Env = os.Environ()
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
-		err = cmd.Run()
+		err = cmd.Start()
 		if err != nil {
-			log.Fatal(err)
+			fmt.Println(err)
 		}
+
+		containerName := os.Args[2]
+		time.Sleep(2 * time.Second)
+		if err := cgroups.ConfigDefaultCgroups(cmd.Process.Pid, containerName); err != nil {
+			log.Error("config cgroups fail %s", err)
+		}
+
+		if err := network.ConfigDefaultNetworkInNewNet(cmd.Process.Pid); err != nil {
+			log.Error("config network fail %s", err)
+		}
+		cmd.Wait()
+		cgroups.CleanCgroupsPath(containerName)
 		workspace.DelMntNamespace(containerName)
 		return
-	//child process
 	case "init":
 		var (
 			containerName = os.Args[2]
 			cmd           = os.Args[3]
 		)
+		log.Info("Wait  SIGUSR2 signal arrived ....")
+		network.WaitParentSetNewNet()
 		if err := workspace.SetMntNamespace(containerName); err != nil {
-			fmt.Println("set mnt namespace fail", err)
+			log.Error("SetMntNamespace %s", err)
 			return
 		}
 		syscall.Chdir("/")
 		defaultMountFlags := syscall.MS_NOEXEC | syscall.MS_NOSUID | syscall.MS_NODEV
-		syscall.Mount("proc", "proc", "proc", uintptr(defaultMountFlags), "")
-
-		err := syscall.Exec(cmd, os.Args[3:], os.Environ()) // replace current process with the new one
+		syscall.Mount("proc", "/proc", "proc", uintptr(defaultMountFlags), "")
+		err := syscall.Exec(cmd, os.Args[3:], os.Environ())
 		if err != nil {
-			fmt.Println("exec proc fail", err)
+			log.Error("exec proc fail %s", err)
 			return
 		}
-		fmt.Println("forever exec it")
+		log.Error("forever not  exec it ")
 		return
 	default:
-		fmt.Println("command not found")
+		log.Error("not valid cmd")
 	}
 }

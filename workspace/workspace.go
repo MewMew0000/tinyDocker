@@ -11,7 +11,7 @@ const (
 	mntPath        = "/root/mnt"
 	workLayerPath  = "/root/work"
 	writeLayerPath = "/root/wlayer"
-	imagePath      = "ubuntu2204_rootfs"
+	imagePath      = "ubuntu-base-16.04.6-base-amd64"
 	mntOldPath     = ".old"
 )
 
@@ -42,9 +42,6 @@ func SetMntNamespace(containerName string) error {
 		return fmt.Errorf("mkdir write layer fail err=%s", err)
 	}
 
-	fmt.Println("writeLayer:", writeLayer(containerName))
-	fmt.Println("imagePath:", imagePath)
-	fmt.Println("workerLayer:", workerLayer(containerName))
 	if err := syscall.Mount("overlay", mntLayer(containerName), "overlay", 0,
 		fmt.Sprintf("upperdir=%s,lowerdir=%s,workdir=%s",
 			writeLayer(containerName), imagePath, workerLayer(containerName))); err != nil {
